@@ -1,26 +1,12 @@
 #include <string.h>
+#include <strings.h>
 #include "cbst.h"
 
-static const MIN_ELEMENTS = 8;
+static const size_t MIN_ELEMENTS = 8;
 static void *scratch = NULL;
 static size_t scratch_len = 0;
 
-static void flatten(CBST *root, void *and, void *except, size_t datalen,
-		int (*compare)(const void *a, const void *b))
-{
-	void *dest, *src;
-
-	if (root->length > scratch_len)
-	{
-		scratch_len = 1<<(ffs(root->length)+1);
-		scratch = realloc(stratch, scratch_len);
-	}
-
-	src = &root->data;
-	dest = scratch + datalen * root->length/2;
-	memcpy(dest, src, datalen);
-
-}
+/*
 data:
              14
          /         \
@@ -69,94 +55,115 @@ sorted_array_index:
 
   3,1,4,0,5,2
  [2,4,5,6,7,9]
+*/
 
-
-flatten (int index, int *bst, int *a, size_t len)
-{
-	bst[index];
-}
-
-{
-	
-	out[0]  = cbst[1<<ffs(cbst[length])];
-}
-
-print_bst_in_order(int *buf, int start, size_t count)
+void do_print_cbst_in_order(const void *buf, int start, size_t count, size_t datalen, void (*print)(const void *))
 {
 	if (start < count)
 	{
-		print_bst_in_order(buf, start*2, count);
-		printf("%d, ", buf[start]);
-		print_bst_in_order(buf, start*2+1, count);
+		do_print_cbst_in_order(buf, start*2, count, datalen, print);
+      print(buf+start*datalen);
+		do_print_cbst_in_order(buf, start*2+1, count, datalen, print);
 	}
+
+   return;
 }
 
-print_bst_in_order(int *buf, size_t count)
+void print_data(const struct CBST *root, size_t datalen, void (*print)(const void *data))
 {
-	start = fss(count);
-	for(;;)
-	{
-		printf("%d, ", buf[start]);
-		printf("%d, ", buf[start/2]);
-		if (count >= start+1) {
-			printf("%d, ", buf[++start]);
-		}
-		start = start/2+1;
-	}
+   void *treestart = (void *)(&root->data - datalen);
+   do_print_cbst_in_order(treestart, 0, root->length, datalen, print);
 }
 
-void flatten (void *in, void *out, size_t datalen, size_t count)
+void array_to_tree(void *tree, size_t length, size_t datalen)
 {
-   size_t span = count/2;
-   size_t node = 0;
-   size_t out_index = 0;
+   size_t span = ffs(length);
+   size_t index = 1;
+   size_t iter;
+   size_t byteoff;
 
-   while (span > 0)
-   {
-      memcpy(out+out_index*datalen, in+span*
-      out_index
-      span /= 2;
-      node = 0;
+   while (span > 0) {
+     iter = 1;
+     while (span*iter-1 < length) {
+         byteoff = (span*iter-1)*datalen;
+         memcpy(tree+index*datalen, scratch+byteoff, datalen);
+         iter += 2;
+         index++;
+      }
    }
 
+   return;
 }
 
-struct CBST *add_data(CBST *root, void *data, size_t datalen,
+void do_add(void *tree, size_t length, void *data, size_t datalen,
+      int (*compare)(const void *a, const void *b))
+{
+   size_t index = 1;
+   size_t span = ffs(length);
+   size_t iter;
+   size_t byteoff;
+   int inserted = 0;
+
+   while (span) {
+     iter = 1;
+     while (span*iter-1 < length) {
+       // todo - refactor iter to be a bitshift so we don't have to multiple
+       // here... assuming the compiler doesn't catch that for us
+       byteoff = (span*iter-1)*datalen;
+        if (!inserted && compare(scratch+byteoff, tree+index*datalen)) {
+           memcpy(scratch+byteoff, data, datalen);
+           inserted = 1;
+        } else {
+           memcpy(scratch+byteoff, tree+index*datalen, datalen);
+           iter += 2;
+        }
+       index++;
+     }
+     span /= 2;
+   }
+
+   if(!inserted)
+      memcpy(scratch+datalen*length, data, datalen);
+
+   array_to_tree(tree, length+1, datalen);
+
+   return;
+}
+
+struct CBST *_add_data(struct CBST *root, void *data, size_t datalen,
 		int (*compare)(const void *a, const void *b))
 {
-	CBST *tmp;
-   static void *buf = NULL;
-   static size_t capacity = 0;
-   size_t in_start = fss(root->length);
-   size_t out_start = fss(root->length+1);
+	struct CBST *tmp;
+   size_t in_start = ffs(root->length);
+   size_t out_start = ffs(root->length+1);
 
-   if (NULL == buf) {
-      capacity = MIN_ELEMENTS;
-      buf = malloc(datalen*MIN_ELEMENTS);
-      if (NULL == buf) {
-         return NULL
+   if (NULL == scratch) {
+      scratch_len = MIN_ELEMENTS;
+      scratch = malloc(datalen*MIN_ELEMENTS);
+      if (NULL == scratch) {
+         return NULL;
       }
    }
-   if (capacity <= root->length+1) {
-      capacity *= 2;
-      tmp = realloc(buf, datalen*capacity);
+   if (scratch_len <= root->length+1) {
+      scratch_len *= 2;
+      tmp = realloc(scratch, datalen*scratch_len);
       if (NULL == tmp) {
-         capacity /= 2;
+         scratch_len /= 2;
          return tmp;
       }
-      buf = tmp;
+      scratch = tmp;
    }
 
 	if (NULL == root) {
-		root = malloc(sizeof(CBST) + datalen*MIN_ELEMENTS);
+		root = malloc(sizeof(struct CBST) + datalen*MIN_ELEMENTS);
 		if (NULL == root) {
 			return root;
 		}
 		root->length = 1;
 		root->capacity = MIN_ELEMENTS;
-	} else if (++(root->length) > capacity) {
+	} else if (++(root->length) > root->capacity) {
 		root->capacity *= 2;
-		tmp = realloc(root, sizeof(CBST) +  datalen*root->capacity);
+		tmp = realloc(root, sizeof(struct CBST) + datalen*root->capacity);
 		if (NULL == tmp) {
 			root->capacity /= 2;
 			return tmp;
@@ -164,9 +171,64 @@ struct CBST *add_data(CBST *root, void *data, size_t datalen,
 		root = tmp;
    }
 
+   do_add(&root->data - datalen, root->length++, data, datalen, compare);
 
+   return root;
+}
 
-  
+int _delete_data(struct CBST *root, void *data, size_t datalen,
+		int (*compare)(const void *a, const void *b))
+{
+   void *treestart = &root->data - datalen;
+   size_t span = ffs(root->length);
+   size_t index = 1;
+   size_t iter;
+   size_t byteoff;
+   int found = 0;
 
-	
+   while (span > 0) {
+      iter = 1;
+      while (span*iter-1 < root->length) {
+         // todo - refactor iter to be a bitshift so we don't have to multiple
+         // here... assuming the compiler doesn't catch that for us
+         byteoff = (span*iter-1)*datalen;
+         if (0 == compare(scratch+byteoff, treestart+index*datalen))
+            found = 1;
+         else {
+            memcpy(scratch+byteoff, treestart+index*datalen, datalen);
+            iter += 2;
+         }
+         index++;
+      }
+      span /= 2;
+   }
 
+   if (found)
+      root->length--;
+      
+   array_to_tree(treestart, root->length, datalen);
+
+   return !found;
+}
+
+void *_find_data(struct CBST *root, void *data, size_t datalen,
+		int (*compare)(const void *a, const void *b))
+{
+   void *treestart = &root->data - datalen;
+   size_t index = 1;
+   size_t byteoff;
+   int result;
+
+   while (index <= root->length) {
+      byteoff = index*datalen;
+      result = compare(treestart+byteoff, data);
+      if (0 == result)
+         return treestart+byteoff;
+      else if (result > 0)
+         index = index*2+1;
+      else
+         index = index*2;
+   }
+
+   return NULL;
+}
